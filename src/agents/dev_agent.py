@@ -1,8 +1,8 @@
 # src/agents/dev_agent.py
 from agentscope.tool import execute_shell_command
-from tools.rag_tool import retrieve_knowledge
-from agentscope.formatter import FormatterBase
+from src.tools.rag_tool import retrieve_knowledge
 from agentscope.model import ChatModelBase
+from agentscope.formatter import FormatterBase
 from agentscope.memory import InMemoryMemory
 from agentscope.tool import Toolkit
 from agentscope.agent import ReActAgent
