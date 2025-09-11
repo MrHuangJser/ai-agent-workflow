@@ -46,98 +46,61 @@
 
 我们将创建一个 `prompts` 目录来集中管理所有 Agent 的系统提示 (System Prompt)。每个 Agent 的提示词将存储在对应的 `.txt` 文件中 (例如 `prompts/dev_agent.txt`)。
 
-在 Agent 初始化时，程序会从这些文件中读取内容并作为 `sys_prompt` 参数传入。这样做可以实现 Prompt 与 Agent 逻辑的分离，便于快速迭代和优化提示词，而无需修改 Python 代码。
+##### 3.2. 核心工具集与信息获取模式
+
+- **知识库检索 (`retrieve_knowledge`)**: 定义在 `tools/rag_tool.py`，用于获取高阶、语义化的知识。
+- **Shell 命令 (`execute_shell_command`)**: AgentScope 内置工具，用于执行 `ls`, `cat`, `grep` 等命令，获取精确的实时上下文。
+- **Agent 协作工具**: 定义在 `tools/agent_tools.py`，是 `OrchestratorAgent` 用来委派任务给其他 Agent 的桥梁。下文将详细介绍。
+
+`DevAgent`、`TestAgent` 和 `RequirementAgent` 都将配备 `retrieve_knowledge` 和 `execute_shell_command` 工具。
+`OrchestratorAgent` 将配备 Agent 协作工具。
 
 **a. `agents/orchestrator_agent.py` - OrchestratorAgent**
 
 - **职责**: 流程控制中心。
-- **实现关键**:
-  - 它的 `reply` 方法将是整个系统的 **状态机**。它会接收并解析 `TestAgent` 的测试报告。
-  - 它不直接与其他 Agent 通信，而是调用定义在 `tools/agent_tools.py` 中的工具函数。这些工具函数内部会实例化并调用相应的子 Agent。
-  - **短期记忆 (`memory`)**: `OrchestratorAgent` 的记忆将完整记录整个任务的生命周期。
+- **实现关键**: 它的 `reply` 方法是整个系统的状态机，通过调用 `tools/agent_tools.py` 中的工具来分派任务，而不直接执行业务逻辑。
 
 **b. `agents/requirement_agent.py` - RequirementAgent**
 
 - **职责**: 解析需求，生成任务列表。
-- **实现关键**:
-  - 它会装备一个定义在 `tools/rag_tool.py` 中的 `retrieve_knowledge` 工具，用于从 LTM 中查询背景知识。
+- **实现关键**: 将使用 `execute_shell_command` 查看相关文档或代码文件，并结合 `retrieve_knowledge` 获取的全局知识，生成更具上下文感知能力的任务列表。
 
 **c. `agents/dev_agent.py` - DevAgent**
 
 - **职责**: 根据任务描述和反馈编写/修改代码。
-- **实现关键**:
-  - 它同样会装备 `retrieve_knowledge` 工具，以查询技术规范和代码示例。
+- **实现关键**: 将大量使用 `execute_shell_command` 工具 (例如 `ls`, `cat`, `grep`) 来探索现有代码、理解上下文，并使用 `retrieve_knowledge` 工具获取高阶设计规范。
 
 **d. `agents/test_agent.py` - TestAgent**
 
 - **职责**: 测试代码并生成报告。
-- **实现关键**:
-  - 它的 `reply` 方法接收代码，然后可以调用静态分析工具或使用LLM生成并执行单元测试。
-  - 它将使用 `structured_model` 参数来保证输出报告的格式统一。
+- **实现关键**: 将使用 `execute_shell_command` 来运行测试命令 (如 `pytest`)、代码检查工具 (如 `ruff check .`)，并读取测试结果文件。
 
 ---
 
-#### 4. 知识库 (LTM) 实现 (含自动化向量流程)
+#### 4. 核心工具设计
+
+##### 4.1. Agent 协作工具 (`tools/agent_tools.py`)
+
+这个模块是实现 “Handoffs” 模式的核心，它将子 Agent 的工作封装成 `OrchestratorAgent` 可以调用的工具。这些工具函数内部会负责实例化对应的 Agent 并执行任务。
+
+- `analyze_requirement(requirement_doc: str) -> str`:
+  - **作用**: 调用 `RequirementAgent` 来分析原始需求。
+  - **内部逻辑**: 实例化一个 `RequirementAgent`，将 `requirement_doc` 作为输入消息传递给它，等待其返回结果（JSON 格式的任务列表字符串），然后将该结果返回。
+
+- `run_development_task(task_description: str, feedback: str = None) -> str`:
+  - **作用**: 调用 `DevAgent` 来执行单个开发任务。
+  - **内部逻辑**: 实例化一个 `DevAgent`，将 `task_description` 和可选的 `feedback` 组合成输入消息，调用 Agent，并返回其产出的代码字符串。
+
+- `run_test_task(code: str) -> str`:
+  - **作用**: 调用 `TestAgent` 来测试一段代码。
+  - **内部逻辑**: 实例化一个 `TestAgent`，将 `code` 作为输入消息，调用 Agent，并返回其产出的 JSON 格式测试报告字符串。
+
+##### 4.2. 知识库工具 (`tools/rag_tool.py`)
 
 知识库功能将分为两部分：**启动时构建/更新** 和 **运行时检索**。
 
-##### 4.1. 启动时构建/更新 (在 `main.py` 中调用)
-
-应用启动时，会有一个初始化函数 (`initialize_vector_db`) 负责自动化地处理 `rag_docs` 目录下的文档。流程如下：
-
-1. **加载文档**: 使用 `LangChain` 的 `DirectoryLoader` 加载 `rag_docs` 目录下的所有文档。
-2. **增量更新 (可选但建议)**: 通过比较文件修改时间或内容的哈希值，只对新增或修改过的文档进行处理，避免重复向量化。
-3. **文本切片**: 将加载的文档切割成小的、语义完整的块。
-4. **向量化与存储**: 将文本块向量化并存入位于 `vector_db` 目录的 `Chroma` 数据库中。
-
-##### 4.2. 运行时检索 (在 `tools/rag_tool.py` 中实现)
-
-检索功能将封装成一个独立的工具，供所有需要它的 Agent 使用。
-
-**`tools/rag_tool.py`:**
-
-```python
-# tools/rag_tool.py
-from agentscope.tool import ToolResponse, TextBlock
-from langchain.vectorstores import Chroma
-from langchain.embeddings import OpenAIEmbeddings
-import config
-
-# 这个 vector_store 对象将在 main.py 中被初始化并传入
-global_vector_store = None
-
-def set_vector_store(vector_store):
-    global global_vector_store
-    global_vector_store = vector_store
-
-def retrieve_knowledge(query: str, k: int = 3) -> ToolResponse:
-    """
-    从向量知识库中检索与查询相关的知识。
-
-    Args:
-        query (str): 用于检索的查询文本。
-        k (int): 返回的相关文档数量。
-    """
-    if global_vector_store is None:
-        return ToolResponse(content=[TextBlock(text="错误：向量数据库未初始化。")])
-
-    docs = global_vector_store.similarity_search(query, k=k)
-    retrieved_content = "
----
-".join([doc.page_content for doc in docs])
-    
-    return ToolResponse(
-        content=[
-            TextBlock(
-                type="text",
-                text=f"从知识库中检索到以下内容：
-{retrieved_content}"
-            )
-        ]
-    )
-```
-
-这个 `retrieve_knowledge` 函数将被注册到 `RequirementAgent` 和 `DevAgent` 的 `Toolkit` 中。
+- **启动时构建/更新 (在 `main.py` 中调用)**: 应用启动时，会有一个初始化函数 (`initialize_vector_db`) 负责自动化地处理 `rag_docs` 目录下的文档。
+- **运行时检索 (`retrieve_knowledge`)**: 封装成一个独立的工具，供所有需要它的 Agent 使用。
 
 ---
 
@@ -149,54 +112,7 @@ def retrieve_knowledge(query: str, k: int = 3) -> ToolResponse:
 
 **b. 开发-测试循环**
 
-这个核心循环将在 `OrchestratorAgent` 的 `reply` 方法中通过 **工具调用** 和 **条件判断** 来实现。
-
-**`agents/orchestrator_agent.py` (伪代码):**
-
-```python
-# agents/orchestrator_agent.py
-# ... imports ...
-
-class OrchestratorAgent(ReActAgent):
-    # ... (初始化)
-    
-    async def reply(self, message: Msg) -> Msg:
-        # 1. 初始需求 -> 分解任务
-        if "task_list" not in self.memory:
-            task_list_str = await self.toolkit.call_tool_function(
-                "analyze_requirement", requirement_doc=message.content
-            )
-            self.memory["task_list"] = json.loads(task_list_str)
-            self.memory["current_task_index"] = 0
-
-        # 2. 按顺序处理任务
-        task_index = self.memory["current_task_index"]
-        if task_index >= len(self.memory["task_list"]):
-            return Msg(self.name, "所有任务已完成！", "assistant")
-
-        current_task = self.memory["task_list"][task_index]
-        
-        # 3. 开发-测试循环
-        feedback = None
-        for i in range(config.MAX_RETRY_ATTEMPTS):
-            code_output = await self.toolkit.call_tool_function(
-                "run_development_task", task_description=current_task, feedback=feedback
-            )
-            
-            test_result_str = await self.toolkit.call_tool_function(
-                "run_test_task", code=code_output
-            )
-            test_result = json.loads(test_result_str)
-
-            if test_result["pass"]:
-                self.memory["current_task_index"] += 1
-                # ... 任务成功逻辑 ...
-                break 
-            else:
-                feedback = test_result["report"]
-        
-        # ... (处理循环结束后的逻辑) ...
-```
+这个核心循环将在 `OrchestratorAgent` 的 `reply` 方法中通过调用在 `agent_tools.py` 中定义的工具和条件判断来实现。
 
 ---
 

@@ -18,8 +18,8 @@ CHAT_MODEL_NAME = "qwen-max"  # 例如: "qwen-max", "gpt-4-turbo", "claude-3-opu
 EMBEDDING_MODEL_NAME = "text-embedding-v2"  # 例如: "text-embedding-v2", "text-embedding-3-large"
 
 # --- 向量数据库 --- 
-VECTOR_DB_PATH = "./src/knowledge_base/vector_db"
-SOURCE_DOCS_PATH = "./src/knowledge_base/source_docs"
+VECTOR_DB_PATH = "./src/vector_db"
+RAG_DOCS_PATH = "./src/rag-docs"
 
 # --- Agent 工作流 ---
 MAX_RETRY_ATTEMPTS = 3  # Dev-Test 循环的最大重试次数
