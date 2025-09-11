@@ -1,256 +1,236 @@
-## 背景
+# AI Coding Agent 系统需求文档 (AgentScope 版)
 
-捏脸业务是当前已有的 C 端业务模块，已具备完整的代码工程和业务逻辑。  
-目标是基于现有业务知识，构建一个 自动化 AI Coding Agent 系统，实现：
+## 1\. 背景
 
-- 对代码进行深度分析，生成业务文档（业务页面文档、技术架构文档、前端设计规范）
-- 构建向量知识库（长期记忆）
-- 使用 LangGraph.js 构建多角色 Agent 协同的代码生成与测试工作流
-- 支持任务循环、自动修正以及人工干预
-- 遵循 上下文工程 思路，区分长期记忆和短期记忆
+目标是基于现有业务知识，构建一个自动化 AI Coding Agent 系统，实现以下功能：
 
-## 技术选型
+- 对现有代码库进行深度分析，自动生成业务文档、技术架构文档和前端设计规范。
+- 基于生成的文档，构建一个向量知识库作为系统的长期记忆。
+- 使用 **AgentScope** 框架构建一个由多角色 Agent 协同的代码生成与测试工作流。
+- 支持开发-测试-修正的任务循环，并能实现自动修正。
+- 在关键节点支持人工干预，确保流程的可控性。
+- 遵循上下文工程思路，清晰地划分和使用长期记忆（知识库）与短期记忆（任务上下文）。
 
-- 编程语言：Node.js
-- 核心框架：
-  - LangGraph.js — 多Agent工作流编排
-  - LangChain.js — LLM调用与RAG检索
-- 向量数据库：Chroma / Milvus / Weaviate（可选）
-- 上下文工程：基于 Context-Engineering 方法论
-- LLM：可使用 OpenAI / Claude / 其他 API
+## 2\. 技术选型
 
-## 整体架构
+- **编程语言**: **Python**
+- **核心框架**:
+  - **AgentScope**: 用于多 Agent 的定义、通信和工作流编排。
+  - **LangChain / LlamaIndex (Python)**: 用于辅助 LLM 调用、文档加载、切片和 RAG 检索。
+- **向量数据库**: Chroma / Milvus / Weaviate (可选其一)。
+- **上下文工程**: 沿用 Context-Engineering 方法论。
+- **LLM**: 可通过 AgentScope 配置，支持 OpenAI / Claude / Qwen / 其他各类模型 API。
 
-### 架构总览
+## 3\. 整体架构 (基于 AgentScope)
+
+AgentScope 的核心是基于消息传递的协同模型。为了管理复杂的、有状态的工作流，我们引入一个核心的 **`OrchestratorAgent` (编排 Agent)** 作为项目经理，负责驱动整个流程、分发任务和做出决策。
+
+### 3.1. 架构总览
 
 ```mermaid
 graph TD
-    PM[产品经理
-需求文档] --> RA[需求分析 Agent]
-    RA -->|任务拆解 & Checklist| DEV[开发 Agent]
-    DEV --> TEST[测试 Agent]
-    TEST -->|通过| DONE[完成交付]
-    TEST -->|未通过| DEV
-    RA --> KB
-    DEV --> KB
-    TEST --> KB
-    H[人工干预] -.-> RA
-    H -.-> DEV
-    H -.-> TEST
+    subgraph AgentScope Workflow
+        U[用户 UserAgent] --> O[编排 Agent <br/> OrchestratorAgent]
+        O --> RA[需求分析 Agent <br/> RequirementAgent]
+        RA -->|任务列表| O
+        O --> DEV[开发 Agent <br/> DevAgent]
+        DEV -->|代码产出| TEST[测试 Agent <br/> TestAgent]
+        TEST -->|测试结果| O
+        O -- "通过" --> DONE[完成交付]
+        O -- "不通过，附带失败信息" --> DEV
+    end
 
     subgraph 知识存储
-        KB[向量数据库
-长期记忆]
-        STM[短期记忆
-任务上下文]
+        KB[向量数据库 <br/> 长期记忆 (LTM)]
+        STM[消息历史 <br/> 短期记忆 (STM)]
     end
+
+    %% Agent 与知识库的交互
+    RA <--> KB
+    DEV <--> KB
+    TEST <--> KB
+
+    %% 人工干预通过编排Agent进行
+    H[人工干预] -- "通过UserAgent" --> O
 ```
 
-- 各 Agent 均可访问 长期记忆（向量知识库）
-- 短期记忆 用于保存当前任务的进度和状态
-- 人工可在任意节点介入
+**核心设计思想**:
 
-### 知识库设计
+- **中央编排**: `OrchestratorAgent` 是流程控制中心，取代了 LangGraph 中的图结构定义。
+- **消息驱动**: Agent 之间通过传递消息进行通信。流程的推进是基于 `OrchestratorAgent` 对收到的消息内容进行判断和决策。
+- **自然的人机交互**: `UserAgent` 是框架的一等公民，可以无缝地将人类操作者集成到工作流中。
 
-设计要点：
+### 3.2. Agent 角色设计
 
-- 数据来源：代码分析生成的业务文档、技术架构文档、前端设计规范
-- 切分：按语义切片（chunking）
-- 嵌入：使用 Embedding 模型
-- 存储：向量数据库
-- 检索方式：RAG（检索增强生成）
+在 AgentScope 中，每个 Agent 都是一个独立的类，其核心逻辑在 `reply` 方法中实现。
+
+#### 3.2.1. OrchestratorAgent (编排 Agent)
+
+- **职责**:
+  - 接收用户的初始需求。
+  - 调用 `RequirementAgent` 将需求分解为结构化的任务列表。
+  - 管理任务队列，按顺序或并行分发任务。
+  - 将 `DevAgent` 生成的代码交给 `TestAgent`。
+  - 根据 `TestAgent` 的测试结果，决定是将任务打回给 `DevAgent` 进行修复（**形成循环**），还是标记为完成。
+  - 在流程中需要人工决策或输入时，主动向 `UserAgent` 发起询问。
+
+#### 3.2.2. RequirementAgent (需求分析 Agent)
+
+- **职责**:
+  - 接收原始需求文档。
+  - **查询 (LTM)** 向量知识库，获取相关的业务背景和既有规范。
+  - 调用 LLM，生成详细、结构化的任务列表 (Checklist)。
+  - 将生成的任务列表作为消息返回给 `OrchestratorAgent`。
+
+#### 3.2.3. DevAgent (开发 Agent)
+
+- **职责**:
+  - 接收来自 `OrchestratorAgent` 的单个开发任务（其中可能包含测试失败的反馈）。
+  - **查询 (LTM)** 向量知识库，检索相关的技术架构、代码规范或相似的代码片段。
+  - 构建包含任务要求、知识库上下文和修正意见的 Prompt。
+  - 调用 LLM 生成代码。
+  - 将生成的代码块作为消息返回。
+
+#### 3.2.4. TestAgent (测试 Agent)
+
+- **职责**:
+  - 接收 `DevAgent` 生成的代码。
+  - 执行测试。测试方式可包括：
+    - 调用代码静态分析工具 (Linter)。
+    - 让 LLM 生成单元测试代码并执行。
+    - 根据预设的测试用例进行逻辑评估。
+  - 生成结构化的测试报告（例如：`{"pass": true/false, "report": "错误详情..."}`），并返回给 `OrchestratorAgent`。
+
+## 4\. 知识库设计 (长期记忆 LTM)
+
+知识库的设计与上层 Agent 框架解耦，可以独立实现并作为服务供 Agent 调用。
+
+### 4.1. 构建流程
+
+构建流程与原始设计保持一致。
 
 ```mermaid
 graph LR
-    Docs[业务文档集合] --> Split[文档切片]
-    Split --> Embed[向量化]
-    Embed --> VDB[向量数据库]
-    Query[Agent 查询] --> QEmbed[查询向量化]
-    QEmbed --> Search[相似度搜索]
-    Search --> Result[返回相关文档]
+    Docs[业务/技术文档集合] --> Split[语义化文档切片]
+    Split --> Embed[向量化 (Embedding)]
+    Embed --> VDB[存入向量数据库]
 ```
 
-示例代码（构建知识库）：
+### 4.2. 检索流程 (RAG)
 
-```javascript
-import { Chroma } from "@langchain/community/vectorstores/chroma";
-import { OpenAIEmbeddings } from "@langchain/openai";
-import fs from "fs";
-
-async function buildKnowledgeBase() {
-  const docs = fs.readFileSync("./docs/business.md", "utf-8");
-  const chunks = splitText(docs, 500); // 分片
-  const embeddings = new OpenAIEmbeddings();
-  const vectorStore = await Chroma.fromTexts(chunks, {}, embeddings);
-  await vectorStore.persist();
-}
-```
-
-### Workflow设计
+在每个 Agent 的 `reply` 方法内部，通过调用 RAG 函数来实现与长期记忆的交互。
 
 ```mermaid
-sequenceDiagram
-    participant PM as 需求分析 Agent
-    participant DEV as 开发 Agent
-    participant KB as 知识库(LTM)
-    participant STM as 短期记忆(STM)
-
-    PM->>KB: 查询业务文档
-    PM->>STM: 存储任务需求
-    DEV->>KB: 检索架构规范
-    DEV->>STM: 更新任务进度
+graph LR
+    Query[Agent 查询 <br/> "实现用户登录功能"] --> QEmbed[查询向量化]
+    QEmbed --> Search[在向量数据库中<br/>进行相似度搜索]
+    VDB[向量数据库] --> Search
+    Search --> Result[返回相关文档片段]
 ```
 
-#### 各个Agent角色的设计
+**Python 伪代码示例 (在 Agent 内部调用)**:
 
-```mermaid
-flowchart LR
-    RA[RequirementAgent] --> DEV[DevAgent]
-    DEV --> TEST[TestAgent]
-    TEST -->|pass| END((END))
-    TEST -->|fail| DEV
+```python
+# RAG 服务可以被封装成一个工具函数
+def retrieve_from_kb(query_text: str, k: int = 3):
+    # vector_store 是预先加载的向量数据库实例
+    docs = vector_store.similarity_search(query_text, k=k)
+    return [doc.page_content for doc in docs]
+
+# DevAgent 的 reply 方法中
+class DevAgent(AgentBase):
+    def reply(self, message):
+        task_description = message.content
+        
+        # 从长期记忆 (LTM) 中检索相关知识
+        relevant_docs = retrieve_from_kb(f"关于'{task_description}'的技术架构规范")
+        
+        prompt = f"""
+        任务：{task_description}
+        相关架构规范：{relevant_docs}
+        请根据以上信息生成代码。
+        """
+        # ... 后续调用 LLM 并返回结果 ...
 ```
 
-角色说明：
+## 5\. Workflow 中的记忆划分
 
-- RequirementAgent：解析需求 → 生成任务列表 & checklist
-- DevAgent：根据任务生成代码
-- TestAgent：执行测试，决定是否回退到开发
-
-示例代码（LangGraph.js 节点定义）：
-
-```javascript
-import { StateGraph, Command } from "@langchain/langgraph";
-
-const builder = new StateGraph({ tasks: [] });
-
-builder.addNode("RequirementAgent", async (state) => {
-  const tasks = await generateTasks(state.requirements);
-  return new Command({ goto: "DevAgent", update: { tasks } });
-});
-
-builder.addNode("DevAgent", async (state) => {
-  const code = await generateCode(state.tasks[0]);
-  return new Command({ goto: "TestAgent", update: { code } });
-});
-
-builder.addNode("TestAgent", async (state) => {
-  const pass = await runTests(state.code);
-  return new Command({ goto: pass ? "END" : "DevAgent" });
-});
-
-const graph = builder.compile();
-```
-
-#### Workflow中长期记忆和短期记忆的划分
+AgentScope 为长短期记忆提供了非常自然的映射。
 
 ```mermaid
 graph TB
-    STM[短期记忆
-当前任务上下文] --> Agent
-    LTM[长期记忆
-向量知识库] --> Agent
-    Agent[任意Agent节点]
-    subgraph 持久化
-        CP[Checkpointer]
+    STM[短期记忆 <br/> Agent 的 Message History] --> Agent
+    LTM[长期记忆 <br/> 向量知识库 (外部调用)] --> Agent
+    Agent[任意 Agent 节点]
+
+    subgraph 持久化存储
+        MSG[消息历史日志]
         KB[向量数据库]
     end
-    Agent -->|更新| STM
-    Agent -->|检索| LTM
+
+    Agent -- "对话交互" --> |更新| STM
+    Agent -- "RAG查询" --> |检索| LTM
     LTM --> KB
-    STM --> CP
+    STM --> MSG
 ```
 
-- 短期记忆：StateGraph 内的 state 对象
-- 长期记忆：向量数据库检索的文档
-- 持久化：checkpointer 保存状态，保证中断可恢复
+- **短期记忆 (STM)**: 直接对应 AgentScope 中每个 Agent 自带的 `memory` 属性。它自动记录了 Agent 的完整对话历史，构成了当前任务的上下文。`OrchestratorAgent` 的 `memory` 完整地记录了整个任务的生命周期。AgentScope 的 `memory` 支持持久化，可以实现任务的中断和恢复。
+- **长期记忆 (LTM)**: 对应外部独立的向量知识库。它是无状态的，通过 RAG 函数在需要时被动查询。
 
-示例代码（记忆调用）：
+## 6\. 任务循环与人工介入
 
-```javascript
-const relatedDocs = await vectorStore.similaritySearch(taskDescription, 3);
-state.context = [...state.context, ...relatedDocs];
-```
+### 6.1. 任务循环 (开发-测试)
 
-#### 任务循环和人工介入
+任务循环由 `OrchestratorAgent` 的决策逻辑驱动，而非图的边。
 
-```mermaid
-graph TD
-    Start[任务开始] --> AI[AI 执行任务]
-    AI --> DEC{需要人工帮助?}
-    DEC -->|是| Human[人工回答]
-    Human --> AI
-    DEC -->|否| Next[继续执行]
-    Next --> Verify[测试验收]
-    Verify -->|失败| AI
-    Verify -->|成功| End[完成]
-```
+1. `OrchestratorAgent` 将开发任务发给 `DevAgent`。
+2. `DevAgent` 回复代码后，`OrchestratorAgent` 将代码转发给 `TestAgent`。
+3. `TestAgent` 回复测试结果。
+4. `OrchestratorAgent` 检查测试结果：
+      - 若 **失败**，则将失败报告连同原始任务一起，**再次**发送给 `DevAgent`，形成闭环。
+      - 若 **成功**，则结束循环，继续处理下一个任务。
+
+### 6.2. 人工介入
+
+通过 `UserAgent` 实现，流程自然，无需特殊状态管理。
+
+- **触发**: 任何 Agent 在其 `reply` 方法中，可以通过逻辑判断（如 `if ambiguity_detected:`）来决定是否需要人工帮助。
+- **执行**: 需要帮助的 Agent 直接向 `UserAgent` 发送一个提问消息。
+- **暂停与恢复**: AgentScope 的消息中心 (`msghub`) 会自动将问题输出到控制台并等待用户输入。用户输入后，`UserAgent` 将回答作为消息返回给提问的 Agent，工作流自动恢复。
+
+### 6.3. 完整交互流程示例
 
 ```mermaid
 sequenceDiagram
-    participant DEV as 开发 Agent
-    participant HUMAN as 人类
-    participant TEST as 测试 Agent
+    participant U as UserAgent (人类)
+    participant O as OrchestratorAgent
+    participant RA as RequirementAgent
+    participant DEV as DevAgent
+    participant TEST as TestAgent
+    participant LTM as 知识库 (LTM)
 
-    DEV->>DEV: 判断是否需要人工输入
-    alt 需要人工
-        DEV->>HUMAN: 抛出问题
-        HUMAN-->>DEV: 人工回答
+    U->>O: 启动新项目：{需求文档.md}
+    O->>RA: 请解析此需求
+    RA->>LTM: 查询相关业务背景
+    LTM-->>RA: 返回相关文档
+    RA->>O: 任务列表：[任务1, 任务2]
+    O->>DEV: 请编码：{任务1：实现登录API}
+    DEV->>LTM: 查询API设计规范
+    LTM-->>DEV: 返回规范文档
+    
+    alt 开发过程需要澄清
+        DEV->>O: 需求不明确，请求人工帮助
+        O->>U: 提问：请问登录失败时，返回的错误码应该是401还是403？
+        U-->>O: 回答：应该返回401
+        O-->>DEV: 人类反馈：{返回401}
     end
-    DEV->>TEST: 提交任务产出
-    TEST-->>DEV: 验收结果（通过/不通过）
-```
 
-- 任意Agent可触发人工介入
-- 人工介入后可继续执行任务
-- 测试失败 → 回到开发 Agent
-
-示例代码：
-Node 定义（判断人工介入）
-
-```javascript
-import { Node } from "@langchain/langgraph";
-
-const humanInterventionNode = new Node({
-  name: "human_intervention",
-  description: "判断并处理人工介入",
-  run: async (context) => {
-    const { taskContext, llm } = context;
-
-    const decision = await llm.invoke(`
-      任务内容：${taskContext}
-      判断是否需要人工帮助，返回 JSON：{"needHuman": true/false, "question": "若需要，给出具体问题"}
-    `);
-
-    if (decision.needHuman) {
-      // 暂停执行，等待人工输入
-      context.state = "WAITING_FOR_HUMAN";
-      context.humanQuestion = decision.question;
-      return { status: "paused_for_human", question: decision.question };
-    }
-
-    return { status: "continue" };
-  }
-});
-
-export default humanInterventionNode;
-```
-
-人工输入在代码中的表现
-
-```javascript
-// 人工输入回调接口
-app.post("/human-response", async (req, res) => {
-  const { taskId, answer } = req.body;
-  
-  // 将人工回答注入短期记忆
-  shortTermMemory[taskId].push({
-    role: "human",
-    content: answer
-  });
-
-  // 恢复执行 AI 流程
-  await workflow.resumeFromNode(taskId, "human_intervention");
-  res.send({ status: "resumed" });
-});
+    DEV->>O: 代码已生成：{api_code_v1.py}
+    O->>TEST: 请测试此代码
+    TEST-->>O: 测试结果：{pass: false, report: "密码加密强度不足"}
+    O-->>DEV: 测试失败，请修正：{密码加密强度不足}
+    DEV->>O: 代码已修正：{api_code_v2.py}
+    O->>TEST: 请再次测试
+    TEST-->>O: 测试结果：{pass: true}
+    O->>U: 任务1已完成！
 ```
