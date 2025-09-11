@@ -1,11 +1,13 @@
 # src/tools/rag_tool.py
-from agentscope.embedding import EmbeddingModelBase, DashScopeTextEmbedding, OpenAITextEmbedding
-import config
-from agentscope.tool import ToolResponse, TextBlock
+import glob
 import os
 import sys
-import glob
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
+from agentscope.embedding import DashScopeTextEmbedding
+from agentscope.tool import TextBlock, ToolResponse
+
+import config
 
 # 添加 src 目录到 sys.path 以便导入兄弟模块
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -81,11 +83,6 @@ async def initialize_vector_db() -> None:
             f"使用 AgentScope DashScope Embedding 模型: {config.EMBEDDING_MODEL_NAME}")
         global_embedder = DashScopeTextEmbedding(
             model=config.EMBEDDING_MODEL_NAME, api_key=config.DASHSCOPE_API_KEY)
-    elif "your_" not in config.OPENAI_API_KEY:
-        print(
-            f"使用 AgentScope OpenAI Embedding 模型: {config.EMBEDDING_MODEL_NAME}")
-        global_embedder = OpenAITextEmbedding(
-            model=config.EMBEDDING_MODEL_NAME, api_key=config.OPENAI_API_KEY)
     else:
         print("错误：未在 .env 或 config.py 中配置有效的 API 密钥。")
         return
