@@ -14,17 +14,16 @@
 为了保证代码的模块化和可维护性，我建议采用以下文件结构：
 
 ```
-/
+/src/
 ├── main.py                     # 项目入口，负责初始化和启动OrchestratorAgent
 ├── config.py                   # 存放API Keys, 模型名称等配置信息
+├── rag_docs/                   # [新] 存放RAG的原始文档
+├── vector_db/                  # [更名] 存放ChromaDB等向量数据库文件
 ├── prompts/                    # 存放所有Agent的System Prompt
 │   ├── orchestrator.txt
 │   ├── requirement_agent.txt
 │   ├── dev_agent.txt
 │   └── test_agent.txt
-├── knowledge_base/             # 存放向量数据库及原始文档
-│   ├── source_docs/
-│   └── vector_db/
 ├── agents/
 │   ├── __init__.py
 │   ├── orchestrator_agent.py
@@ -49,87 +48,67 @@
 
 在 Agent 初始化时，程序会从这些文件中读取内容并作为 `sys_prompt` 参数传入。这样做可以实现 Prompt 与 Agent 逻辑的分离，便于快速迭代和优化提示词，而无需修改 Python 代码。
 
-**加载示例:**
-
-```python
-# agents/dev_agent.py
-from agentscope.agent import ReActAgent
-
-# 在模块加载时读取文件
-with open("../prompts/dev_agent.txt", "r", encoding="utf-8") as f:
-    DEV_AGENT_PROMPT = f.read()
-
-class DevAgent(ReActAgent):
-    def __init__(self, ...):
-        super().__init__(
-            name="DevAgent",
-            sys_prompt=DEV_AGENT_PROMPT,
-            ...
-        )
-```
-
 **a. `agents/orchestrator_agent.py` - OrchestratorAgent**
 
 - **职责**: 流程控制中心。
 - **实现关键**:
   - 它的 `reply` 方法将是整个系统的 **状态机**。它会接收并解析 `TestAgent` 的测试报告。
-  - 它不直接与其他 Agent 通信，而是调用定义在 `tools/agent_tools.py` 中的工具函数，例如 `analyze_requirement(requirement_doc)` 和 `run_development_task(task_description, feedback)`。这些工具函数内部会实例化并调用相应的子 Agent。
-  - **短期记忆 (`memory`)**: `OrchestratorAgent` 的记忆将完整记录整个任务的生命周期，包括任务分解、代码生成、测试反馈和修正的所有步骤。
+  - 它不直接与其他 Agent 通信，而是调用定义在 `tools/agent_tools.py` 中的工具函数。这些工具函数内部会实例化并调用相应的子 Agent。
+  - **短期记忆 (`memory`)**: `OrchestratorAgent` 的记忆将完整记录整个任务的生命周期。
 
 **b. `agents/requirement_agent.py` - RequirementAgent**
 
 - **职责**: 解析需求，生成任务列表。
 - **实现关键**:
-  - 它将被 `tools.agent_tools.analyze_requirement` 函数实例化和调用。
   - 它会装备一个定义在 `tools/rag_tool.py` 中的 `retrieve_knowledge` 工具，用于从 LTM 中查询背景知识。
-  - 它的 `reply` 方法将接收原始需求，调用 `retrieve_knowledge` 工具，构建 Prompt，然后调用 LLM 生成结构化的任务列表，并作为最终结果返回。
 
 **c. `agents/dev_agent.py` - DevAgent**
 
 - **职责**: 根据任务描述和反馈编写/修改代码。
 - **实现关键**:
-  - 它将被 `tools.agent_tools.run_development_task` 函数实例化和调用。
   - 它同样会装备 `retrieve_knowledge` 工具，以查询技术规范和代码示例。
-  - 它的 `reply` 方法会接收包含任务描述和可选测试反馈的 `message`。它会利用这些信息和从 LTM 检索到的知识来生成或修正代码。
 
 **d. `agents/test_agent.py` - TestAgent**
 
 - **职责**: 测试代码并生成报告。
 - **实现关键**:
-  - 它将被 `tools.agent_tools.run_test_task` 函数实例化和调用。
-  - 它的 `reply` 方法接收代码，然后可以：
-        1. 调用 **静态分析工具** (如 `ruff`, `pylint`)。
-        2. 调用 LLM **生成单元测试** 并使用 `execute_python_code` 工具执行。
-  - 最后，它会返回一个结构化的 JSON 报告，如 `{"pass": false, "report": "..."}`。为了保证格式，我们会使用 `structured_model` 参数，这在 `task_agent.py` 中有详细说明。
+  - 它的 `reply` 方法接收代码，然后可以调用静态分析工具或使用LLM生成并执行单元测试。
+  - 它将使用 `structured_model` 参数来保证输出报告的格式统一。
 
 ---
 
-#### 4. 知识库 (LTM) 实现
+#### 4. 知识库 (LTM) 实现 (含自动化向量流程)
 
-我们将把 RAG 功能封装成一个独立的工具，供所有需要它的 Agent 使用。
+知识库功能将分为两部分：**启动时构建/更新** 和 **运行时检索**。
+
+##### 4.1. 启动时构建/更新 (在 `main.py` 中调用)
+
+应用启动时，会有一个初始化函数 (`initialize_vector_db`) 负责自动化地处理 `rag_docs` 目录下的文档。流程如下：
+
+1. **加载文档**: 使用 `LangChain` 的 `DirectoryLoader` 加载 `rag_docs` 目录下的所有文档。
+2. **增量更新 (可选但建议)**: 通过比较文件修改时间或内容的哈希值，只对新增或修改过的文档进行处理，避免重复向量化。
+3. **文本切片**: 将加载的文档切割成小的、语义完整的块。
+4. **向量化与存储**: 将文本块向量化并存入位于 `vector_db` 目录的 `Chroma` 数据库中。
+
+##### 4.2. 运行时检索 (在 `tools/rag_tool.py` 中实现)
+
+检索功能将封装成一个独立的工具，供所有需要它的 Agent 使用。
 
 **`tools/rag_tool.py`:**
 
 ```python
 # tools/rag_tool.py
 from agentscope.tool import ToolResponse, TextBlock
-# 假设使用 ChromaDB 和 LangChain/LlamaIndex
-import chromadb
 from langchain.vectorstores import Chroma
-from langchain.embeddings import OpenAIEmbeddings # 或者其他 embedding
-from config import OPENAI_API_KEY
+from langchain.embeddings import OpenAIEmbeddings
+import config
 
-# --- LTM 构建过程 (离线完成) ---
-# 1. 加载 source_docs/ 中的文档
-# 2. 切片 (Splitting)
-# 3. 向量化 (Embedding) & 存入 ChromaDB
+# 这个 vector_store 对象将在 main.py 中被初始化并传入
+global_vector_store = None
 
-# --- LTM 检索工具 ---
-# 在 main.py 中初始化 vector_store
-vector_store = Chroma(
-    persist_directory="./knowledge_base/vector_db",
-    embedding_function=OpenAIEmbeddings(api_key=OPENAI_API_KEY)
-)
+def set_vector_store(vector_store):
+    global global_vector_store
+    global_vector_store = vector_store
 
 def retrieve_knowledge(query: str, k: int = 3) -> ToolResponse:
     """
@@ -139,7 +118,10 @@ def retrieve_knowledge(query: str, k: int = 3) -> ToolResponse:
         query (str): 用于检索的查询文本。
         k (int): 返回的相关文档数量。
     """
-    docs = vector_store.similarity_search(query, k=k)
+    if global_vector_store is None:
+        return ToolResponse(content=[TextBlock(text="错误：向量数据库未初始化。")])
+
+    docs = global_vector_store.similarity_search(query, k=k)
     retrieved_content = "
 ---
 ".join([doc.page_content for doc in docs])
@@ -163,7 +145,7 @@ def retrieve_knowledge(query: str, k: int = 3) -> ToolResponse:
 
 **a. 短期记忆 (STM)**
 
-每个 Agent 实例将拥有自己的 `agentscope.memory.InMemoryMemory`。这完全符合 AgentScope 的设计，Agent 的对话历史就是其短期记忆。
+每个 Agent 实例将拥有自己的 `agentscope.memory.InMemoryMemory`，用于记录其对话历史。
 
 **b. 开发-测试循环**
 
@@ -173,22 +155,16 @@ def retrieve_knowledge(query: str, k: int = 3) -> ToolResponse:
 
 ```python
 # agents/orchestrator_agent.py
-from agentscope.agent import ReActAgent
-from agentscope.message import Msg
-from tools.agent_tools import analyze_requirement, run_development_task, run_test_task
-import json
+# ... imports ...
 
 class OrchestratorAgent(ReActAgent):
-    
-    # ... (初始化, sys_prompt, model, etc.)
-    # toolkit 中注册了 analyze_requirement, run_development_task, run_test_task
+    # ... (初始化)
     
     async def reply(self, message: Msg) -> Msg:
         # 1. 初始需求 -> 分解任务
-        if "task_list" not in self.memory: # 假设用 memory 存状态
+        if "task_list" not in self.memory:
             task_list_str = await self.toolkit.call_tool_function(
-                "analyze_requirement",
-                requirement_doc=message.content
+                "analyze_requirement", requirement_doc=message.content
             )
             self.memory["task_list"] = json.loads(task_list_str)
             self.memory["current_task_index"] = 0
@@ -202,28 +178,21 @@ class OrchestratorAgent(ReActAgent):
         
         # 3. 开发-测试循环
         feedback = None
-        for i in range(MAX_RETRY_ATTEMPTS): # 设置最大重试次数
-            # 调用 DevAgent 工具
+        for i in range(config.MAX_RETRY_ATTEMPTS):
             code_output = await self.toolkit.call_tool_function(
-                "run_development_task",
-                task_description=current_task,
-                feedback=feedback
+                "run_development_task", task_description=current_task, feedback=feedback
             )
             
-            # 调用 TestAgent 工具
             test_result_str = await self.toolkit.call_tool_function(
-                "run_test_task",
-                code=code_output
+                "run_test_task", code=code_output
             )
             test_result = json.loads(test_result_str)
 
             if test_result["pass"]:
-                # 测试通过，跳出循环，处理下一个任务
                 self.memory["current_task_index"] += 1
-                # ... (返回成功信息) ...
+                # ... 任务成功逻辑 ...
                 break 
             else:
-                # 测试失败，准备反馈，进入下一次循环
                 feedback = test_result["report"]
         
         # ... (处理循环结束后的逻辑) ...
@@ -233,7 +202,7 @@ class OrchestratorAgent(ReActAgent):
 
 #### 6. 状态持久化与人工介入
 
-- **状态持久化**: 正如 `task_state.py` 文档所示，我们可以在 `main.py` 中使用 `agentscope.session.JSONSession`。在程序启动时加载上一次的会话状态，在程序结束前保存所有 Agent 的状态。这可以轻松实现任务的中断和恢复。
-- **人工介入**: AgentScope 的 `UserAgent` 让此功能非常自然。在任何子 Agent（如 `DevAgent`）的逻辑中，如果检测到需要人工输入，它可以直接向 `UserAgent` 返回一个提问消息。`OrchestratorAgent` 在收到这个特殊消息后，将其转发给用户，等待输入，然后将用户的回答传回给子 Agent，从而恢复流程。
+- **状态持久化**: 在 `main.py` 中使用 `agentscope.session.JSONSession` 来保存和加载会话状态，实现任务的中断和恢复。
+- **人工介入**: 任何 Agent 都可以通过向 `UserAgent` 发送消息来提问，`OrchestratorAgent` 负责协调这一过程，实现自然的人机交互。
 
 ---

@@ -1,0 +1,6 @@
+agentscope
+python-dotenv
+langchain
+chromadb
+openai
+tiktoken
