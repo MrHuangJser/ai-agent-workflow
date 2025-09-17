@@ -64,12 +64,12 @@ async def requirement_analyze(requirement_doc: str) -> ToolResponse:
     if "your_" in config.DASHSCOPE_API_KEY:
         return ToolResponse(content=[TextBlock(type="text", text=json.dumps({
             "error": "missing_api_key"
-        }, ensure_ascii=False)).to_dict()])
+        }, ensure_ascii=False))])
 
     agent = _ensure_requirement_agent()
     msg = await agent(Msg(name="user", content=requirement_doc, role="user"))
     text = msg.get_text_content() if msg else "{}"
-    return ToolResponse(content=[TextBlock(type="text", text=text).to_dict()])
+    return ToolResponse(content=[TextBlock(type="text", text=text)])
 
 
 async def dev_run(
@@ -89,7 +89,7 @@ async def dev_run(
             "success": False,
             "stage": stage_name,
             "error": "missing_api_key",
-        }, ensure_ascii=False)).to_dict()])
+        }, ensure_ascii=False))])
 
     agent = _ensure_dev_agent()
     constraints = constraints or {}
@@ -110,7 +110,7 @@ async def dev_run(
         "stage": stage_name,
         "summary": (result_text[:1000] if result_text else "no output"),
     }, ensure_ascii=False)
-    return ToolResponse(content=[TextBlock(type="text", text=summary_json).to_dict()])
+    return ToolResponse(content=[TextBlock(type="text", text=summary_json)])
 
 
 async def plan_update(markdown: str, target_path: str, overwrite: bool = True) -> ToolResponse:
@@ -125,14 +125,14 @@ async def plan_update(markdown: str, target_path: str, overwrite: bool = True) -
         return ToolResponse(content=[TextBlock(type="text", text=json.dumps({
             "success": False,
             "error": "path_outside_workspace"
-        }, ensure_ascii=False)).to_dict()])
+        }, ensure_ascii=False))])
 
     os.makedirs(os.path.dirname(abs_target), exist_ok=True)
     if os.path.exists(abs_target) and not overwrite:
         return ToolResponse(content=[TextBlock(type="text", text=json.dumps({
             "success": False,
             "error": "file_exists"
-        }, ensure_ascii=False)).to_dict()])
+        }, ensure_ascii=False))])
 
     with open(abs_target, 'w', encoding='utf-8') as f:
         f.write(markdown or "")
@@ -141,4 +141,4 @@ async def plan_update(markdown: str, target_path: str, overwrite: bool = True) -
         "success": True,
         "path": target_path,
         "bytes": len(markdown or ""),
-    }, ensure_ascii=False)).to_dict()])
+    }, ensure_ascii=False))])
