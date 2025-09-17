@@ -64,8 +64,8 @@
 
 **b. `agents/requirement_agent.py` - RequirementAgent**
 
-- **职责**: 解析需求，生成任务列表。
-- **实现关键**: 将使用 `execute_shell_command` 查看相关文档或代码文件，并结合 `retrieve_knowledge` 获取的全局知识，生成更具上下文感知能力的任务列表。
+- **职责**: 解析需求，进行最小澄清并产出小步可验证的实施计划（结构化 JSON + Markdown）。
+- **设计说明**: 详见单独文档《RequirementAgent 架构说明》（docs/requirement_agent.md）。
 
 **c. `agents/dev_agent.py` - DevAgent**
 
