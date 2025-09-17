@@ -6,8 +6,8 @@
 
 我们将完全采纳您设计的以 `OrchestratorAgent` 为核心的中央编排模式。Agent 之间的协作将通过两种方式实现：
 
-1.  **任务分发 (Handoffs)**: `OrchestratorAgent` 将通过调用一个封装了子 Agent 的**工具 (Tool)** 来向其分派任务。这是实现可控、结构化工作流的最佳方式，符合 `agentscope-docs/workflow_handoffs.py` 中展示的模式。
-2.  **消息广播 (Broadcast)**: 在需要自由讨论或评审的场景（如果未来有需求），可以使用 `MsgHub`。但在当前的核心工作流中，我们将以工具调用为主。
+1. **任务分发 (Handoffs)**: `OrchestratorAgent` 将通过调用一个封装了子 Agent 的**工具 (Tool)** 来向其分派任务。这是实现可控、结构化工作流的最佳方式，符合 `agentscope-docs/workflow_handoffs.py` 中展示的模式。
+2. **消息广播 (Broadcast)**: 在需要自由讨论或评审的场景（如果未来有需求），可以使用 `MsgHub`。但在当前的核心工作流中，我们将以工具调用为主。
 
 #### 2. 项目文件结构
 
@@ -48,9 +48,9 @@
 
 ##### 3.2. 核心工具集与信息获取模式
 
--   **知识库检索 (`retrieve_knowledge`)**: 定义在 `tools/rag_tool.py`，用于获取高阶、语义化的知识。
--   **Shell 命令 (`execute_shell_command`)**: AgentScope 内置工具，用于执行 `ls`, `cat`, `grep` 等命令，获取精确的实时上下文。
--   **Agent 协作工具**: 定义在 `tools/agent_tools.py`，是 `OrchestratorAgent` 用来委派任务给其他 Agent 的桥梁。下文将详细介绍。
+- **知识库检索 (`retrieve_knowledge`)**: 定义在 `tools/rag_tool.py`，用于获取高阶、语义化的知识。
+- **Shell 命令 (`execute_shell_command`)**: AgentScope 内置工具，用于执行 `ls`, `cat`, `grep` 等命令，获取精确的实时上下文。
+- **Agent 协作工具**: 定义在 `tools/agent_tools.py`，是 `OrchestratorAgent` 用来委派任务给其他 Agent 的桥梁。下文将详细介绍。
 
 `DevAgent`、`TestAgent` 和 `RequirementAgent` 都将配备 `retrieve_knowledge` 和 `execute_shell_command` 工具。
 `OrchestratorAgent` 将配备 Agent 协作工具。
@@ -59,23 +59,23 @@
 
 **a. `agents/orchestrator_agent.py` - OrchestratorAgent**
 
--   **职责**: 流程控制中心。
--   **实现关键**: 它的 `reply` 方法是整个系统的状态机，通过调用 `tools/agent_tools.py` 中的工具来分派任务，而不直接执行业务逻辑。
+- **职责**: 流程控制中心。
+- **实现关键**: 它的 `reply` 方法是整个系统的状态机，通过调用 `tools/agent_tools.py` 中的工具来分派任务，而不直接执行业务逻辑。
 
 **b. `agents/requirement_agent.py` - RequirementAgent**
 
--   **职责**: 解析需求，生成任务列表。
--   **实现关键**: 将使用 `execute_shell_command` 查看相关文档或代码文件，并结合 `retrieve_knowledge` 获取的全局知识，生成更具上下文感知能力的任务列表。
+- **职责**: 解析需求，生成任务列表。
+- **实现关键**: 将使用 `execute_shell_command` 查看相关文档或代码文件，并结合 `retrieve_knowledge` 获取的全局知识，生成更具上下文感知能力的任务列表。
 
 **c. `agents/dev_agent.py` - DevAgent**
 
--   **职责**: 根据任务描述和反馈编写/修改代码。
--   **实现关键**: 将大量使用 `execute_shell_command` 工具 (例如 `ls`, `cat`, `grep`) 来探索现有代码、理解上下文，并使用 `retrieve_knowledge` 工具获取高阶设计规范。
+- **职责**: 根据任务描述和反馈编写/修改代码。
+- **实现关键**: 将大量使用 `execute_shell_command` 工具 (例如 `ls`, `cat`, `grep`) 来探索现有代码、理解上下文，并使用 `retrieve_knowledge` 工具获取高阶设计规范。
 
 **d. `agents/test_agent.py` - TestAgent**
 
--   **职责**: 测试代码并生成报告。
--   **实现关键**: 将使用 `execute_shell_command` 来运行测试命令 (如 `pytest`)、代码检查工具 (如 `ruff check .`)，并读取测试结果文件。
+- **职责**: 测试代码并生成报告。
+- **实现关键**: 将使用 `execute_shell_command` 来运行测试命令 (如 `pytest`)、代码检查工具 (如 `ruff check .`)，并读取测试结果文件。
 
 ---
 
@@ -83,14 +83,14 @@
 
 这是一个核心设计决策，用于确保系统的稳定性和可维护性。
 
--   **OrchestratorAgent (长生命周期)**: 在 `main.py` 中被实例化，且**只有一个实例**。它的生命周期与整个应用程序相同。它的短期记忆 (`memory`) 记录了所有任务的派发、代码生成、测试结果和修正历史，是整个项目的“总账本”。
+- **OrchestratorAgent (长生命周期)**: 在 `main.py` 中被实例化，且**只有一个实例**。它的生命周期与整个应用程序相同。它的短期记忆 (`memory`) 记录了所有任务的派发、代码生成、测试结果和修正历史，是整个项目的“总账本”。
 
--   **Worker Agents (`DevAgent`, `TestAgent`, etc. - 短生命周期)**: 它们是**临时的、任务范围的**实例。当 `OrchestratorAgent` 调用一个协作工具时（例如 `run_development_task`），这个工具函数会**在内部创建一个全新的** `DevAgent` 实例。任务完成后，`DevAgent` 实例返回结果，然后其生命周期结束。这种模式有巨大优势：
-    -   **高度隔离性**: 每个任务都由一个“全新”的 Agent 来处理，彻底杜绝了上一个任务的上下文泄露到当前任务的风险。
-    -   **上下文纯净**: Worker Agent 每次都只接收为当前任务精确提供的上下文，避免了被过时或无关的信息干扰。
-    -   **简化状态管理**: 我们只需关心 `OrchestratorAgent` 的状态，无需管理和重置 Worker Agent 的状态。
+- **Worker Agents (`DevAgent`, `TestAgent`, etc. - 短生命周期)**: 它们是**临时的、任务范围的**实例。当 `OrchestratorAgent` 调用一个协作工具时（例如 `run_development_task`），这个工具函数会**在内部创建一个全新的** `DevAgent` 实例。任务完成后，`DevAgent` 实例返回结果，然后其生命周期结束。这种模式有巨大优势：
+  - **高度隔离性**: 每个任务都由一个“全新”的 Agent 来处理，彻底杜绝了上一个任务的上下文泄露到当前任务的风险。
+  - **上下文纯净**: Worker Agent 每次都只接收为当前任务精确提供的上下文，避免了被过时或无关的信息干扰。
+  - **简化状态管理**: 我们只需关心 `OrchestratorAgent` 的状态，无需管理和重置 Worker Agent 的状态。
 
--   **核心信息流**: `OrchestratorAgent` 的记忆是通过记录自己**调用工具的动作**和**工具返回的结果**来更新的。Worker Agent 的最终产出（如代码、测试报告）会作为工具结果返回，并被 `OrchestratorAgent` 自动记录到自己的记忆中，从而驱动它做出下一步决策。
+- **核心信息流**: `OrchestratorAgent` 的记忆是通过记录自己**调用工具的动作**和**工具返回的结果**来更新的。Worker Agent 的最终产出（如代码、测试报告）会作为工具结果返回，并被 `OrchestratorAgent` 自动记录到自己的记忆中，从而驱动它做出下一步决策。
 
 ---
 
@@ -100,14 +100,14 @@
 
 这个模块是实现 “Handoffs” 模式的核心，它将子 Agent 的工作封装成 `OrchestratorAgent` 可以调用的工具。这些工具函数内部会负责实例化对应的 Agent 并执行任务。
 
--   `analyze_requirement(requirement_doc: str) -> str`
--   `run_development_task(task_description: str, feedback: str = None) -> str`
--   `run_test_task(code: str) -> str`
+- `analyze_requirement(requirement_doc: str) -> str`
+- `run_development_task(task_description: str, feedback: str = None) -> str`
+- `run_test_task(code: str) -> str`
 
 ##### 5.2. 知识库工具 (`tools/rag_tool.py`)
 
--   **启动时构建/更新 (`initialize_vector_db`)**: 在 `main.py` 中调用，自动化处理 `rag_docs` 目录下的文档。
--   **运行时检索 (`retrieve_knowledge`)**: 封装成独立的工具，供 Agent 在运行时调用。
+- **启动时构建/更新 (`initialize_vector_db`)**: 在 `main.py` 中调用，自动化处理 `rag_docs` 目录下的文档。
+- **运行时检索 (`retrieve_knowledge`)**: 封装成独立的工具，供 Agent 在运行时调用。
 
 ---
 
@@ -121,7 +121,7 @@
 
 #### 7. 状态持久化与人工介入
 
--   **状态持久化**: 在 `main.py` 中使用 `agentscope.session.JSONSession` 来保存和加载会话状态。
--   **人工介入 (向上汇报机制)**: 为了保证清晰的指挥链，Worker Agent 不会直接与用户交互。当需要人工澄清时，它会返回一个特定格式的JSON对象（例如 `{"status": "clarification_needed", "question": "..."}`）来向上“汇报”问题。`OrchestratorAgent` 在接收到这个信号后，作为唯一的用户接口，负责向 `UserAgent` 提问，并将用户的回答在下一轮任务中传递给 Worker Agent。
+- **状态持久化**: 在 `main.py` 中使用 `agentscope.session.JSONSession` 来保存和加载会话状态。
+- **人工介入 (向上汇报机制)**: 为了保证清晰的指挥链，Worker Agent 不会直接与用户交互。当需要人工澄清时，它会返回一个特定格式的JSON对象（例如 `{"status": "clarification_needed", "question": "..."}`）来向上“汇报”问题。`OrchestratorAgent` 在接收到这个信号后，作为唯一的用户接口，负责向 `UserAgent` 提问，并将用户的回答在下一轮任务中传递给 Worker Agent。
 
 ---

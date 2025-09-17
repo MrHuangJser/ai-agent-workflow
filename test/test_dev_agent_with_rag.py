@@ -43,8 +43,8 @@ async def setup_and_teardown_rag():
     config.RAG_DOCS_PATH = TEST_RAG_DOCS_DIR
     config.VECTOR_DB_PATH = TEST_VECTOR_DB_DIR
 
-    # 3. 初始化向量数据库
-    vector_store = await rag_tool.initialize_vector_db()
+    # 3. 初始化向量数据库（按 Agent 名称选择 embedding 模型）
+    vector_store = await rag_tool.initialize_vector_db(agent_name="DevAgent")
     if vector_store is None:
         pytest.skip("未配置有效的 API 密钥，跳过 RAG 初始化测试。")
     rag_tool.set_vector_store(vector_store)
@@ -77,7 +77,9 @@ async def test_dev_agent_uses_rag_context(setup_and_teardown_rag):
     """
     # 1. 准备模型和格式化器
     model = DashScopeChatModel(
-        model_name=config.CHAT_MODEL_NAME, api_key=config.DASHSCOPE_API_KEY, stream=False)
+        model_name=getattr(config, "get_chat_model_name", lambda _=None: config.CHAT_MODEL_NAME)("DevAgent"),
+        api_key=config.DASHSCOPE_API_KEY,
+        stream=False)
     assert model is not None, "未配置有效的 API 密钥，无法执行测试。"
 
     formatter = DashScopeChatFormatter()

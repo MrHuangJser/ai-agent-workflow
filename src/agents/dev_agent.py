@@ -1,5 +1,5 @@
 # src/agents/dev_agent.py
-from agentscope.tool import execute_shell_command
+from agentscope.tool import execute_shell_command, write_text_file, view_text_file, insert_text_file
 from src.tools.rag_tool import retrieve_knowledge
 from agentscope.model import ChatModelBase
 from agentscope.formatter import FormatterBase
@@ -48,6 +48,9 @@ class DevAgent(ReActAgent):
         toolkit = Toolkit()
         toolkit.register_tool_function(retrieve_knowledge)
         toolkit.register_tool_function(execute_shell_command)
+        toolkit.register_tool_function(write_text_file)
+        toolkit.register_tool_function(view_text_file)
+        toolkit.register_tool_function(insert_text_file)
 
         # 2. 调用父类的构造函数，传入预设好的配置
         super().__init__(

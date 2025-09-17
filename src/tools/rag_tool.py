@@ -56,8 +56,13 @@ def _split_text(documents: List[Dict[str, Any]], chunk_size: int = 1000, chunk_o
     return chunks
 
 # --- 导出的核心函数 ---
-async def initialize_vector_db() -> Any:
-    """初始化向量数据库。"""
+async def initialize_vector_db(agent_name: str | None = None) -> Any:
+    """初始化向量数据库。
+
+    Args:
+        agent_name: 可选，指定为哪个 Agent 选择 embedding 模型；
+            若未提供则使用全局默认 embedding 模型。
+    """
     global global_chroma_collection, global_embedder
     print("正在初始化向量数据库 (纯 AgentScope 实现)... ")
 
@@ -70,8 +75,9 @@ async def initialize_vector_db() -> Any:
         return None # 返回 None
     
     if dashscope_key_configured:
-        print(f"使用 AgentScope DashScope Embedding 模型: {config.EMBEDDING_MODEL_NAME}")
-        global_embedder = DashScopeTextEmbedding(model_name=config.EMBEDDING_MODEL_NAME, api_key=config.DASHSCOPE_API_KEY)
+        embedding_model_name = getattr(config, "get_embedding_model_name", lambda _=None: config.EMBEDDING_MODEL_NAME)(agent_name)
+        print(f"使用 AgentScope DashScope Embedding 模型: {embedding_model_name}")
+        global_embedder = DashScopeTextEmbedding(model_name=embedding_model_name, api_key=config.DASHSCOPE_API_KEY)
     else:
         # 理论上不应该到达这里，因为上面已经检查过
         print("错误：无法初始化嵌入模型，请检查 API 密钥配置。")
