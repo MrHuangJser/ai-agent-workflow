@@ -10,6 +10,8 @@ from agentscope.message import ToolUseBlock
 from agentscope.model import ChatModelBase
 from agentscope.tool import Toolkit
 
+from src.tools.agent_tools import dev_run, plan_update, requirement_analyze
+
 # 添加 src 目录到 sys.path 以便导入兄弟模块
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -47,8 +49,6 @@ class OrchestratorAgent(ReActAgent):
         toolkit = Toolkit()
         # 注册来自 tools/agent_tools.py 的工具函数（保持一次实例化的子 Agent）
         try:
-            from src.tools.agent_tools import (dev_run, plan_update,
-                                               requirement_analyze)
             toolkit.register_tool_function(requirement_analyze)
             toolkit.register_tool_function(dev_run)
             toolkit.register_tool_function(plan_update)
