@@ -116,7 +116,7 @@ async def retrieve_knowledge(query: str, k: int = 3) -> ToolResponse:
     """从向量知识库中检索与查询相关的知识。"""
     if global_chroma_collection is None or global_embedder is None:
         error_msg = "错误：向量数据库或嵌入模型未初始化。"
-        return ToolResponse(content=[TextBlock(text=error_msg).to_dict()])
+        return ToolResponse(content=[TextBlock(type="text", text=error_msg)])
 
     try:
         print(f"正在从知识库中异步检索 '{query}'...")
@@ -125,7 +125,7 @@ async def retrieve_knowledge(query: str, k: int = 3) -> ToolResponse:
         docs = results['documents'][0]
         retrieved_content = "\n---\n".join(docs) if docs else "在知识库中未找到与查询直接相关的信息。"
         response_text = f"从知识库中检索到以下内容：\n{retrieved_content}"
-        return ToolResponse(content=[TextBlock(text=response_text).to_dict()])
+        return ToolResponse(content=[TextBlock(type="text", text=response_text)])
     except Exception as e:
         error_msg = f"知识库检索时发生错误: {e}"
-        return ToolResponse(content=[TextBlock(text=error_msg).to_dict()])
+        return ToolResponse(content=[TextBlock(type="text", text=error_msg)])
