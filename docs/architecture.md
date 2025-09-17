@@ -1,4 +1,4 @@
-### 架构设计方案 (AI Coding Agent)
+# 架构设计方案 (AI Coding Agent)
 
 ---
 
@@ -69,8 +69,8 @@
 
 **c. `agents/dev_agent.py` - DevAgent**
 
-- **职责**: 根据任务描述和反馈编写/修改代码。
-- **实现关键**: 将大量使用 `execute_shell_command` 工具 (例如 `ls`, `cat`, `grep`) 来探索现有代码、理解上下文，并使用 `retrieve_knowledge` 工具获取高阶设计规范。
+- **职责**: 以小步增量实现/修复并完成最小验证与自愈迭代。
+- **设计说明**: 详见单独文档《DevAgent 架构说明》（docs/dev_agent.md）。
 
 **d. `agents/test_agent.py` - TestAgent**
 
