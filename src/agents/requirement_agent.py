@@ -2,7 +2,7 @@ from src.tools.rag_tool import retrieve_knowledge
 from agentscope.model import ChatModelBase
 from agentscope.formatter import FormatterBase
 from agentscope.memory import InMemoryMemory
-from agentscope.tool import Toolkit, ToolResponse, execute_shell_command as builtin_execute_shell_command
+from agentscope.tool import Toolkit, ToolResponse, execute_shell_command as builtin_execute_shell_command, view_text_file
 from agentscope.message import TextBlock
 from agentscope.agent import ReActAgent
 import os
@@ -42,7 +42,8 @@ class RequirementAgent(ReActAgent):
             if not isinstance(command, str) or not command.strip():
                 return ToolResponse(content=[TextBlock(type="text", text="{\"error\":\"invalid_command\"}")])
 
-            banned_tokens = [">", ">>", "<<", "|", "sudo", "rm ", "mv ", "cp ", "chmod", "chown", "mkdir", "touch", "tee", "truncate", ":>", "npm", "pnpm", "yarn", "git "]
+            banned_tokens = [">", ">>", "<<", "|", "sudo", "rm ", "mv ", "cp ", "chmod",
+                             "chown", "mkdir", "touch", "tee", "truncate", ":>", "npm", "pnpm", "yarn", "git "]
             for tok in banned_tokens:
                 if tok in command:
                     return ToolResponse(content=[TextBlock(type="text", text=f"{{\"error\":\"blocked_command\",\"reason\":\"contains banned token: {tok}\"}}")])
@@ -63,6 +64,7 @@ class RequirementAgent(ReActAgent):
             return await builtin_execute_shell_command(command)
 
         toolkit.register_tool_function(execute_shell_command)
+        toolkit.register_tool_function(view_text_file)
 
         # 2) 初始化父类
         super().__init__(
@@ -74,4 +76,5 @@ class RequirementAgent(ReActAgent):
             memory=InMemoryMemory(),
             parallel_tool_calls=True,
             enable_meta_tool=True,
+            max_iters=20,
         )
