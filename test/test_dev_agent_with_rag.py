@@ -1,21 +1,20 @@
 # test/test_dev_agent_with_rag.py
+from src.tools import rag_tool
+from src.agents.dev_agent import DevAgent
+from src import config
+from agentscope.model import DashScopeChatModel
+from agentscope.message import Msg
+from agentscope.formatter import DashScopeChatFormatter
+import pytest_asyncio
+import pytest
 import asyncio
 import os
 import shutil
 import sys
 
 # 将项目根目录添加到 sys.path，确保 src 模块可导入
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-import pytest
-import pytest_asyncio
-from agentscope.formatter import DashScopeChatFormatter
-from agentscope.message import Msg
-from agentscope.model import DashScopeChatModel
-
-from src import config
-from src.agents.dev_agent import DevAgent
-from src.tools import rag_tool
+sys.path.insert(0, os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..')))
 
 
 # --- 测试设置 ---
@@ -77,7 +76,8 @@ async def test_dev_agent_uses_rag_context(setup_and_teardown_rag):
     """
     # 1. 准备模型和格式化器
     model = DashScopeChatModel(
-        model_name=getattr(config, "get_chat_model_name", lambda _=None: config.CHAT_MODEL_NAME)("DevAgent"),
+        model_name=getattr(config, "get_chat_model_name",
+                           lambda _=None: config.CHAT_MODEL_NAME)("DevAgent"),
         api_key=config.DASHSCOPE_API_KEY,
         stream=False)
     assert model is not None, "未配置有效的 API 密钥，无法执行测试。"

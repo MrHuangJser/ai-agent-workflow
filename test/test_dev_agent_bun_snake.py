@@ -1,20 +1,21 @@
 # test/test_dev_agent_bun_snake.py
-from src.agents.dev_agent import DevAgent
-from src import config
-from agentscope.model import DashScopeChatModel
-from agentscope.message import Msg
-from agentscope.formatter import DashScopeChatFormatter
-import pytest_asyncio
-import pytest
 import asyncio
 import json
 import os
 import shutil
 import sys
 
-# 将项目根目录添加到 sys.path，确保 src 模块可导入
-sys.path.insert(0, os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '..')))
+import pytest
+import pytest_asyncio
+from agentscope.formatter import DashScopeChatFormatter
+from agentscope.message import Msg
+from agentscope.model import DashScopeChatModel
+
+from src import config
+from src.agents.dev_agent import DevAgent
+
+# 添加项目根目录到 sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
 TEST_PROJECT_DIR = "./test/temp_bun_snake"

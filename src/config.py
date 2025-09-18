@@ -13,7 +13,7 @@ DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "your_dashscope_api_key_here"
 # --- 模型名称（默认） ---
 # 全局默认模型名称，作为兜底配置
 # 例如: "qwen3-max-preview"
-CHAT_MODEL_NAME = "qwen3-max-preview"
+CHAT_MODEL_NAME = "qwen3-next-80b-a3b-instruct"
 # 例如: "text-embedding-v4"
 EMBEDDING_MODEL_NAME = "text-embedding-v4"
 

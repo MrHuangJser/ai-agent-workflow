@@ -1,13 +1,23 @@
 # src/agents/dev_agent.py
-from agentscope.tool import execute_shell_command, write_text_file, view_text_file, insert_text_file
-from src.tools.rag_tool import retrieve_knowledge
-from agentscope.model import ChatModelBase
-from agentscope.formatter import FormatterBase
-from agentscope.memory import InMemoryMemory
-from agentscope.tool import Toolkit
-from agentscope.agent import ReActAgent
+import asyncio
+import contextlib
+import json
 import os
 import sys
+
+from agentscope.agent import ReActAgent
+from agentscope.formatter import FormatterBase
+from agentscope.memory import InMemoryMemory
+from agentscope.message import TextBlock
+from agentscope.model import ChatModelBase
+from agentscope.tool import Toolkit, ToolResponse
+from agentscope.tool import \
+    execute_shell_command as builtin_execute_shell_command
+from agentscope.tool import insert_text_file, view_text_file, write_text_file
+
+from src.tools.rag_tool import retrieve_knowledge
+from src.tools.shell_session import (shell_session_close, shell_session_read,
+                                     shell_session_send, shell_session_start)
 
 # 添加 src 目录到 sys.path 以便导入兄弟模块
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -47,7 +57,12 @@ class DevAgent(ReActAgent):
         # 1. 为自己创建专用的工具集
         toolkit = Toolkit()
         toolkit.register_tool_function(retrieve_knowledge)
-        toolkit.register_tool_function(execute_shell_command)
+
+        toolkit.register_tool_function(shell_session_start)
+        toolkit.register_tool_function(shell_session_read)
+        toolkit.register_tool_function(shell_session_send)
+        toolkit.register_tool_function(shell_session_close)
+
         toolkit.register_tool_function(write_text_file)
         toolkit.register_tool_function(view_text_file)
         toolkit.register_tool_function(insert_text_file)

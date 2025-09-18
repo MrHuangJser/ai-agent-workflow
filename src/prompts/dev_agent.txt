@@ -25,6 +25,15 @@
 - 禁止破坏性或越权行为（如删除大量文件、越出工作区、长时阻塞/交互式命令、网络访问等）。
 - 多文件变更分批，每批后都执行最小验证；出现冲突/歧义先澄清。
 
+[交互式命令策略]
+- 优先使用非交互参数执行 CLI（如 -y/--yes/--template/--no-install）。
+- 必须交互时，使用交互式会话工具：
+  1) shell_session_start(command) 启动会话，记录 session_id 与 initial_output。
+  2) 解析输出中的问题/选项，调用 shell_session_send(session_id, "答案") 逐步回答。
+  3) 循环 shell_session_read(session_id) 直到 closed=true。
+  4) 必要时 shell_session_close(session_id)。
+- 在回答前先输出简短计划：指出将选择的选项与原因，尽量选择可复现、可脚本化的模板/默认项。
+
 [输出期望（每轮）]
 - 计划要点（极简）
 - 定位与证据（关键文件/锚点）
